@@ -29,15 +29,21 @@ const PumpMqtt = () => {
     };
   };
 
-  const sendAlertToBackend = async (message) => {
+  const sendAlertToBackend = async () => {
     const { date, time } = getFormattedDateTime();
-    const payload = { date, time, message };
+    const payload = {
+      date,
+      time,
+      message: "Alert : Total 160 Ltr added",
+    };
+
+    console.log("📦 Sending payload to backend:", payload);
 
     try {
-      const response = await axios.post(`${apiUrl}message_api/`, payload);
-      console.log("✅ Alert sent to backend:", response.data);
+      const response = await axios.post(`${apiUrl}/message_api/`, payload);
+      console.log("✅ POST success:", response.data);
     } catch (error) {
-      console.error("❌ Error sending alert to backend:", error);
+      console.error("❌ POST failed:", error);
     }
   };
 
@@ -74,7 +80,9 @@ const PumpMqtt = () => {
 
   const fetchSavedMessages = async () => {
     try {
-      const response = await axios.get(`${apiUrl}message_api/`);
+      const response = await axios.get(`${apiUrl}/message_api/`);
+      console.log("📥 GET success:", response.data);
+
       let extractedMessages = [];
 
       const recursiveExtract = (obj) => {
@@ -94,7 +102,7 @@ const PumpMqtt = () => {
       filterMessagesByDate(selectedDate, extractedMessages);
       calculateMonthlyTotal(extractedMessages, selectedDate);
     } catch (error) {
-      console.error("❌ Error fetching saved messages:", error);
+      console.error("❌ GET failed:", error);
     }
   };
 
@@ -118,6 +126,7 @@ const PumpMqtt = () => {
       setCurrentDateTime(`${date} ${time}`);
     }, 1000);
 
+    console.log("🌐 Connecting to MQTT...");
     clientRef.current = mqtt.connect({
       hostname: "mqttbroker.bc-pl.com",
       port: 443,
@@ -128,24 +137,27 @@ const PumpMqtt = () => {
     });
 
     clientRef.current.on("connect", () => {
+      console.log("✅ MQTT Connected");
       setIsConnected(true);
       setConnectionStatus("Connected");
-      clientRef.current.subscribe("123/pump");
+      clientRef.current.subscribe("pump/alerts");
     });
 
     clientRef.current.on("message", (topic, message) => {
       const rawMessage = message.toString().replace(/^"|"$/g, "");
-      console.log("🔔 MQTT Message:", rawMessage);
+      console.log("🔔 MQTT Message Received:", rawMessage);
 
-      if (rawMessage === "Alert : Total 160 Ltr added") {
-        sendAlertToBackend(rawMessage);
+      // Condition: when we receive "Cycle reset..." → send 160 Ltr POST
+      if (rawMessage === "Cycle reset complete. New cycle started.") {
+        console.log("🚀 Triggered: sending 160 Ltr message to backend");
+        sendAlertToBackend();
       }
 
       setMessages((prev) => [...prev, rawMessage]);
     });
 
     clientRef.current.on("error", (err) => {
-      console.error("Connection error:", err);
+      console.error("❌ MQTT Connection error:", err);
       setConnectionStatus(`Error: ${err.message}`);
     });
 
@@ -176,17 +188,15 @@ const PumpMqtt = () => {
       </div>
 
       <div className="mb-4">
-        <p className=" text-xl">
+        <p className="text-xl">
           Status: <span className={getStatusColor()}>{connectionStatus}</span>
         </p>
       </div>
 
-      {/* Side-by-side container */}
       <div className="flex flex-row gap-6">
-        {/* Live Messages Section */}
         <div className="w-1/2 mb-6">
           <h2 className="text-lg font-semibold mb-2">Live Messages:</h2>
-          <div className=" rounded p-4 shadow-lg h-screen overflow-y-auto space-y-2 border border-gray-400">
+          <div className="rounded p-4 shadow-lg h-screen overflow-y-auto space-y-2 border border-gray-400">
             {messages.map((msg, index) => (
               <div key={index} className="bg-gray-200 p-3 rounded">
                 <p className="text-gray break-all">
@@ -201,7 +211,6 @@ const PumpMqtt = () => {
           </div>
         </div>
 
-        {/* Calendar + Summary Section */}
         <div className="w-1/2 p-4 rounded shadow-lg mt-9 border border-gray-400">
           <h2 className="text-lg font-semibold mb-4">Choose A Date</h2>
           <DatePicker
@@ -218,23 +227,22 @@ const PumpMqtt = () => {
             📥 Load Saved Messages
           </button>
 
-          <div className="mt-6 text-2xl border border-gray-200 shadow p-4">
+          {/* <div className="mt-6 text-2xl border border-gray-200 shadow p-4">
             <h2 className="font-semibold mb-1">📅 Daily Summary</h2>
             <p>"Alert : Total 160 Ltr added" occurred {total160Count} times.</p>
             <p>Daily total: {totalLiters} Ltr</p>
-          </div>
+          </div> */}
 
           <div className="mt-6 text-2xl border border-gray-200 shadow p-4">
             <h2 className="font-semibold mb-1">
               📈 Summary (Month of{" "}
-              {selectedDate?.toLocaleString("default", { month: "long" }) ||
-                "-"}
+              {selectedDate?.toLocaleString("default", { month: "long" }) || "-"}
               )
             </h2>
             <p>
               "Alert : Total 160 Ltr added" occurred {monthly160Count} times.
             </p>
-            <p>Monthly total water filled: {monthlyLiters} Ltr</p>
+            <p>Monthly total filled: {monthlyLiters} Ltr</p>
           </div>
         </div>
       </div>
