@@ -10,7 +10,6 @@ const PumpMqtt = () => {
   const [messages, setMessages] = useState([]);
   const clientRef = useRef(null);
 
-
   useEffect(() => {
     clientRef.current = mqtt.connect({
       hostname: "mqttbroker.bc-pl.com",
@@ -71,13 +70,18 @@ const PumpMqtt = () => {
   return (
     <div className="p-6 text-gray bg-gray-100 min-h-screen">
       <div className="mb-4">
-        <h1 className="text-2xl font-bold">Pump Monitoring</h1>
+        <h1 className="text-2xl font-bold">Pump Automation</h1>
         <p className="text-xl">
           Status: <span className={getStatusColor()}>{connectionStatus}</span>
         </p>
       </div>
 
       <div className="flex gap-6">
+        <div className="w-64">
+          <FuelCountPanel />
+        </div>
+
+        
         {/* Left side - MQTT Messages */}
         <div className="flex-1 mb-6">
           <h2 className="text-lg font-semibold mb-2">All MQTT Messages:</h2>
@@ -95,9 +99,6 @@ const PumpMqtt = () => {
         </div>
 
         {/* Right side - Fuel Count (modular component) */}
-        <div className="w-64">
-          <FuelCountPanel />
-        </div>
       </div>
     </div>
   );
