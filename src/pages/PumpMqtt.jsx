@@ -1,132 +1,17 @@
+// PumpMqtt.jsx
 import React, { useState, useEffect, useRef } from "react";
 import mqtt from "mqtt";
 import axios from "axios";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
-
+import FuelCountPanel from "./FuelCountPannel"; // <-- Import it
 const apiUrl = import.meta.env.VITE_API_URL;
 
 const PumpMqtt = () => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [messages, setMessages] = useState([]);
-  const [fetchedMessages, setFetchedMessages] = useState([]);
-  const [filteredMessages, setFilteredMessages] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [total160Count, setTotal160Count] = useState(0);
-  const [totalLiters, setTotalLiters] = useState(0);
-  const [monthly160Count, setMonthly160Count] = useState(0);
-  const [monthlyLiters, setMonthlyLiters] = useState(0);
-  const [currentDateTime, setCurrentDateTime] = useState("");
   const [connectionStatus, setConnectionStatus] = useState("Connecting...");
+  const [messages, setMessages] = useState([]);
   const clientRef = useRef(null);
 
-  const getFormattedDateTime = () => {
-    const now = new Date();
-    return {
-      date: now.toLocaleDateString("en-CA"),
-      time: now.toTimeString().slice(0, 5),
-      iso: now.toISOString(),
-    };
-  };
-
-  const sendAlertToBackend = async () => {
-    const { date, time } = getFormattedDateTime();
-    const payload = {
-      date,
-      time,
-      message: "Alert : Total 160 Ltr added",
-    };
-
-    console.log("📦 Sending payload to backend:", payload);
-
-    try {
-      const response = await axios.post(`${apiUrl}/message_api/`, payload);
-      console.log("✅ POST success:", response.data);
-    } catch (error) {
-      console.error("❌ POST failed:", error);
-    }
-  };
-
-  const calculateTotalLiters = (messagesList) => {
-    const count = messagesList.filter(
-      (msg) => msg.message === "Alert : Total 160 Ltr added"
-    ).length;
-    setTotal160Count(count);
-    setTotalLiters(count * 160);
-  };
-
-  const calculateMonthlyTotal = (messagesList, monthDate) => {
-    if (!monthDate) {
-      setMonthly160Count(0);
-      setMonthlyLiters(0);
-      return;
-    }
-
-    const selectedMonth = monthDate.getMonth();
-    const selectedYear = monthDate.getFullYear();
-
-    const monthFiltered = messagesList.filter((msg) => {
-      const [year, month] = msg.date.split("-").map(Number);
-      return year === selectedYear && month - 1 === selectedMonth;
-    });
-
-    const count = monthFiltered.filter(
-      (msg) => msg.message === "Alert : Total 160 Ltr added"
-    ).length;
-
-    setMonthly160Count(count);
-    setMonthlyLiters(count * 160);
-  };
-
-  const fetchSavedMessages = async () => {
-    try {
-      const response = await axios.get(`${apiUrl}/message_api/`);
-      console.log("📥 GET success:", response.data);
-
-      let extractedMessages = [];
-
-      const recursiveExtract = (obj) => {
-        if (Array.isArray(obj)) {
-          obj.forEach(recursiveExtract);
-        } else if (obj && typeof obj === "object") {
-          if (obj.message && obj.date && obj.time) {
-            extractedMessages.push(obj);
-          } else {
-            Object.values(obj).forEach(recursiveExtract);
-          }
-        }
-      };
-
-      recursiveExtract(response.data);
-      setFetchedMessages(extractedMessages);
-      filterMessagesByDate(selectedDate, extractedMessages);
-      calculateMonthlyTotal(extractedMessages, selectedDate);
-    } catch (error) {
-      console.error("❌ GET failed:", error);
-    }
-  };
-
-  const filterMessagesByDate = (date, allMessages = fetchedMessages) => {
-    if (!date) {
-      setFilteredMessages(allMessages);
-      calculateTotalLiters(allMessages);
-      return;
-    }
-
-    const selected = date.toISOString().split("T")[0];
-    const filtered = allMessages.filter((msg) => msg.date === selected);
-
-    setFilteredMessages(filtered);
-    calculateTotalLiters(filtered);
-  };
 
   useEffect(() => {
-    const datetimeInterval = setInterval(() => {
-      const { date, time } = getFormattedDateTime();
-      setCurrentDateTime(`${date} ${time}`);
-    }, 1000);
-
-    console.log("🌐 Connecting to MQTT...");
     clientRef.current = mqtt.connect({
       hostname: "mqttbroker.bc-pl.com",
       port: 443,
@@ -137,113 +22,81 @@ const PumpMqtt = () => {
     });
 
     clientRef.current.on("connect", () => {
-      console.log("✅ MQTT Connected");
-      setIsConnected(true);
       setConnectionStatus("Connected");
       clientRef.current.subscribe("pump/alerts");
     });
 
-    clientRef.current.on("message", (topic, message) => {
+    clientRef.current.on("message", async (topic, message) => {
       const rawMessage = message.toString().replace(/^"|"$/g, "");
-      console.log("🔔 MQTT Message Received:", rawMessage);
-
-      // Condition: when we receive "Cycle reset..." → send 160 Ltr POST
-      if (rawMessage === "Cycle reset complete. New cycle started.") {
-        console.log("🚀 Triggered: sending 160 Ltr message to backend");
-        sendAlertToBackend();
-      }
+      console.log("📩 Raw MQTT Message:", rawMessage);
 
       setMessages((prev) => [...prev, rawMessage]);
+
+      const numberMatch = rawMessage.match(/=\s*(\d+(\.\d+)?)/);
+
+      if (numberMatch) {
+        const numberToSend = parseFloat(numberMatch[1]);
+
+        try {
+          await axios.post(`${apiUrl}/quantity_api/`, {
+            quantity: numberToSend,
+          });
+          console.log("✅ Number posted to API:", numberToSend);
+        } catch (error) {
+          console.error("❌ API post error:", error);
+        }
+      } else {
+        console.log("ℹ️ No number found in message:", rawMessage);
+      }
     });
 
     clientRef.current.on("error", (err) => {
-      console.error("❌ MQTT Connection error:", err);
+      console.error("Connection error:", err);
       setConnectionStatus(`Error: ${err.message}`);
     });
 
     return () => {
-      clearInterval(datetimeInterval);
       if (clientRef.current) {
         clientRef.current.end();
       }
     };
   }, []);
 
-  useEffect(() => {
-    filterMessagesByDate(selectedDate);
-    calculateMonthlyTotal(fetchedMessages, selectedDate);
-  }, [selectedDate]);
-
   const getStatusColor = () => {
-    if (isConnected) return "text-green-400";
-    if (connectionStatus.includes("Error")) return "text-red-400";
+    if (connectionStatus === "Connected") return "text-green-400";
+    if (connectionStatus.startsWith("Error")) return "text-red-400";
     return "text-yellow-400";
   };
 
   return (
-    <div className="p-6 text-gray bg-gray-100 min-h-screen relative">
-      <div className="flex justify-between items-start mb-4">
-        <h1 className="text-2xl font-bold">Pump Monitoring</h1>
-        <div className="text-sm text-gray-900">{currentDateTime}</div>
-      </div>
-
+    <div className="p-6 text-gray bg-gray-100 min-h-screen">
       <div className="mb-4">
+        <h1 className="text-2xl font-bold">Pump Monitoring</h1>
         <p className="text-xl">
           Status: <span className={getStatusColor()}>{connectionStatus}</span>
         </p>
       </div>
 
-      <div className="flex flex-row gap-6">
-        <div className="w-1/2 mb-6">
-          <h2 className="text-lg font-semibold mb-2">Live Messages:</h2>
-          <div className="rounded p-4 shadow-lg h-screen overflow-y-auto space-y-2 border border-gray-400">
-            {messages.map((msg, index) => (
-              <div key={index} className="bg-gray-200 p-3 rounded">
-                <p className="text-gray break-all">
-                  <span className="text-sm text-gray-600">
-                    {currentDateTime}
-                  </span>
-                  <br />
-                  {msg}
-                </p>
-              </div>
-            ))}
+      <div className="flex gap-6">
+        {/* Left side - MQTT Messages */}
+        <div className="flex-1 mb-6">
+          <h2 className="text-lg font-semibold mb-2">All MQTT Messages:</h2>
+          <div className="rounded p-4 shadow-lg h-[70vh] overflow-y-auto border border-gray-400">
+            {messages.length > 0 ? (
+              messages.map((msg, index) => (
+                <div key={index} className="bg-gray-200 p-3 rounded mb-2">
+                  <p className="text-gray break-all">{msg}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-gray-500">No messages received yet</p>
+            )}
           </div>
         </div>
 
-        <div className="w-1/2 p-4 rounded shadow-lg mt-9 border border-gray-400">
-          <h2 className="text-lg font-semibold mb-4">Choose A Date</h2>
-          <DatePicker
-            selected={selectedDate}
-            onChange={(date) => setSelectedDate(date)}
-            placeholderText="📅 Select Date"
-            className="px-3 py-2 rounded text-sm text-black mb-4 w-96 border border-gray-400"
-            dateFormat="yyyy-MM-dd"
-          />
-          <button
-            onClick={fetchSavedMessages}
-            className="bg-blue-400 hover:bg-blue-700 px-4 py-2 rounded font-medium w-96 text-white"
-          >
-            📥 Load Saved Messages
-          </button>
-
-          {/* <div className="mt-6 text-2xl border border-gray-200 shadow p-4">
-            <h2 className="font-semibold mb-1">📅 Daily Summary</h2>
-            <p>"Alert : Total 160 Ltr added" occurred {total160Count} times.</p>
-            <p>Daily total: {totalLiters} Ltr</p>
-          </div> */}
-
-          <div className="mt-6 text-2xl border border-gray-200 shadow p-4">
-            <h2 className="font-semibold mb-1">
-              📈 Summary (Month of{" "}
-              {selectedDate?.toLocaleString("default", { month: "long" }) || "-"}
-              )
-            </h2>
-            <p>
-              "Alert : Total 160 Ltr added" occurred {monthly160Count} times.
-            </p>
-            <p>Monthly total filled: {monthlyLiters} Ltr</p>
-          </div>
+        {/* Right side - Fuel Count (modular component) */}
+        <div className="w-64">
+          <FuelCountPanel />
         </div>
       </div>
     </div>
