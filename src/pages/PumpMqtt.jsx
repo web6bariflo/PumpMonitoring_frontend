@@ -22,8 +22,8 @@ const PumpMqtt = () => {
 
     clientRef.current.on("connect", () => {
       setConnectionStatus("Connected");
-      // clientRef.current.subscribe("pump/alerts");
-      clientRef.current.subscribe("123/pump");
+      clientRef.current.subscribe("pump/alerts");
+      // clientRef.current.subscribe("123/pump");
     });
 
     clientRef.current.on("message", async (topic, message) => {
