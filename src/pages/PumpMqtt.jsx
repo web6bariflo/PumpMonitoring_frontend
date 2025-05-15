@@ -22,7 +22,8 @@ const PumpMqtt = () => {
 
     clientRef.current.on("connect", () => {
       setConnectionStatus("Connected");
-      clientRef.current.subscribe("pump/alerts");
+      // clientRef.current.subscribe("pump/alerts");
+      clientRef.current.subscribe("123/pump");
     });
 
     clientRef.current.on("message", async (topic, message) => {
@@ -31,22 +32,22 @@ const PumpMqtt = () => {
 
       setMessages((prev) => [...prev, rawMessage]);
 
-      const numberMatch = rawMessage.match(/=\s*(\d+(\.\d+)?)/);
+      // const numberMatch = rawMessage.match(/=\s*(\d+(\.\d+)?)/);
 
-      if (numberMatch) {
-        const numberToSend = parseFloat(numberMatch[1]);
+      // if (numberMatch) {
+      //   const numberToSend = parseFloat(numberMatch[1]);
 
-        try {
-          await axios.post(`${apiUrl}/quantity_api/`, {
-            quantity: numberToSend,
-          });
-          console.log("✅ Number posted to API:", numberToSend);
-        } catch (error) {
-          console.error("❌ API post error:", error);
-        }
-      } else {
-        console.log("ℹ️ No number found in message:", rawMessage);
-      }
+      //   try {
+      //     await axios.post(`${apiUrl}/quantity_api/`, {
+      //       quantity: numberToSend,
+      //     });
+      //     console.log("✅ Number posted to API:", numberToSend);
+      //   } catch (error) {
+      //     console.error("❌ API post error:", error);
+      //   }
+      // } else {
+      //   console.log("ℹ️ No number found in message:", rawMessage);
+      // }
     });
 
     clientRef.current.on("error", (err) => {
